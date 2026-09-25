@@ -6,8 +6,8 @@
 
 ## Highlights
 
-- Random startup banner — the visual identity changes on every launch.
-- Automatic terminal cleanup before the application UI appears.
+- Fixed Zetra ASCII startup logo for a consistent project identity.
+- Automatic terminal screen and scrollback cleanup before the application UI appears when supported by the terminal.
 - Automatic `sudo` elevation when launched with `python3 kaliDriver.py`.
 - Kali Linux and kernel detection.
 - PCI inventory with active kernel-driver and device-ID information.
@@ -86,7 +86,7 @@ The program automatically requests `sudo` when root privileges are required. It 
 
 ```text
 1. Clears the visible terminal
-2. Shows a random startup banner
+2. Shows the fixed Zetra startup logo
 3. Detects Kali Linux and the kernel
 4. Checks Kali firmware repositories
 5. Runs APT update

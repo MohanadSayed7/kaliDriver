@@ -1,5 +1,26 @@
 # Changelog
 
+## v2.4.1
+
+- Improved startup terminal clearing for Kali/XFCE and other ANSI-compatible terminals.
+- Clears the visible screen and terminal scrollback before rendering the application.
+- Keeps shell history and files untouched.
+- Uses a fallback visual clear for unusual/non-interactive terminals.
+
+## 2.4.0 - 2026-09-26
+
+- Replaced randomized startup banners with a fixed Zetra ASCII project logo.
+- Added the supplied `kali Driver` Zetra wordmark to the terminal startup screen.
+- Kept the startup branding stable for README screenshots and project identity.
+- Updated README wording to reflect the fixed logo.
+
+## 2.3.1 - 2026-09-26
+
+- Reworked the startup wordmark into a clean Rich-based logo layout.
+- Added terminal scrollback clearing so previous shell commands are removed when supported.
+- Kept randomized startup identity while avoiding broken multi-line ASCII art.
+- Updated the project version metadata.
+
 ## 2.3.0 - 2026-09-26
 
 - Simplified the main menu from 11 entries to 4 functional groups plus Exit.

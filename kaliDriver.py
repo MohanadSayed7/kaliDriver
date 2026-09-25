@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import os
 import platform
-import random
 import re
 import shutil
 import subprocess
@@ -32,7 +31,7 @@ from rich.table import Table
 from rich.text import Text
 
 APP_NAME = "kaliDriver"
-VERSION = "2.3.0"
+VERSION = "2.4.1"
 LOG_FILE = Path.home() / ".kalidriver.log" if os.geteuid() != 0 else Path("/var/log/kalidriver.log")
 
 console = Console()
@@ -58,32 +57,17 @@ class HardwareDevice:
     device_id: str = ""
 
 
-BANNERS = [
-    r"""
-+--------------------------------------------------------------+
-|                         kaliDriver                           |
-|                 HARDWARE & DRIVER TOOL                       |
-+--------------------------------------------------------------+
-""",
-    r"""
-===============================================================
-                         KALI DRIVER
-                 HARDWARE / DRIVER / APT
-===============================================================
-""",
-    r"""
-+==============================================================+
-|  KALI DRIVER  ::  HARDWARE  ::  FIRMWARE  ::  MAINTENANCE   |
-+==============================================================+
-""",
-    r"""
-        _  __     _ _ ____       _       _     _
-       | |/ /__ _| (_)  _ \ _ __(_)_   _| |__ (_)__
-       | ' // _` | | | | | | '__| | | | | '_ \| \ \ /
-       | . \ (_| | | | |_| | |  | | |_| | | | | |\ V /
-       |_|\_\__,_|_|_|____/|_|  |_|\__,_|_| |_|_| \_/
-""",
-]
+LOGO = r"""▐▀▀▀▀█     █▀▀▀▀█     ▄▄███▄▄     ▐▀▀▀▀█        ▀▀▀▀▀▀▀▀    ▀▀▀▀▀▀▀▀▀▀▀▀     ▐▀▀▀▀▀▀▀▀▀█▄▄   ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀      █▀▀▀▀█▐▀▀▀▀▀▀▀▀▀▀▀▀█▐▀▀▀▀▀▀▀▀▀█▄▄   
+▐ ████     █ ████   ▄█▀▄▄▄▄▄██▄   ▐ ████        ▀▀▀▀▀▀▀▀    ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  ▐ ████████████▄ ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀      ██████▐ ████████████▐ ████████████▄ 
+▐ ████     █ ████  █▀▄██████████  ▐ ████        ▀▀▀▀▀▀▀▀    ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀▀█▀████▌▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀      ██████▐ ████▀▀▀▀▀▀▀▀ ▀▀▀▀▀▀▀▀█▀████▌
+▐ ████▄▄▄▄█▀▄███▌ ▐▌▐███████████▌ ▐ ████         █▀▀▀▀█     ▐▀▀▀▀█ ▀ ▀█▀▀▀▀▀▌▐ █ █ ▄▄▄█ ████▌ █▀▀▀▀█ ▐▀▀▀▀▀█      ██████▐ ████▄▄▄▄▄▄▄▄▐ █ █ ▄▄▄█ ████▌
+▐ █████▄▄▄▄████▀  █ ████▀  ▀▀▀▀▀▀ ▐ ████         █ ████     ▐█████    ██████▌▐ █ █ ██▄▄████▀  █ ████ ▐ █████      █ ████▐ ████▄▄▄▄▄▄▄█▐ █ █ ██▄▄████▀ 
+▐ ████████████ ▄▀▐▌▐███▌ ▀▀▀▀▀▀▀▀ ▐ ████         █ ████     ▐█████    ██████▌▐ █ █ ██████▀    █ ████ ▐▄▀████▌    ▐█ ████▐ ████████████▐ █ █ ██████▀   
+▐▄████ ▄ ▀▀████▄ █ ████ ▀▀▀▀▀▀▀▀▀▀▐▄████         █ ████     ▐█████   ▄██████▌▐ █ █ ▀█▄▀███▄   █ ████  █▄▀████    ██████▌▐▄████        ▐ █ █ ▀█▄▀███▄  
+▄▄▄▄▄▄  ▀▄  ██████ ████ ▀▀▀▀▀▀▀▀▀▀▄▄▄▄▄▄▄▄▄▄▄▄▄▄ █ ████     ▐█████▀▀▀▀▄█████ ▐ █ █ ▄ ▀█ ███▄  █ ████   █▄▀████▄▄█▀▄████ ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▐ █ █ ▄ ▀█ ███▄ 
+▄▄▄▄▄▄   █ ▄▄▄▄▄▄█ ████ ▀▀▀ █▀████▄▄▄▄▄▄▄▄▄▄▄▄▄▄ █ ████     ▐█████████████▀  ▐ █ █  ▀▄▐█ ████ █ ████  ▄ ▀█▄▀███▄▄████▀ ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▐ █ █  ▀▄▐█ ████
+▄▄▄▄▄▄   █ ▄▄▄▄▄▄█▄████     █▄████▄▄▄▄▄▄▄▄▄▄▄▄▄▄ █▄████     ▐▄▄████████▀▀ ▄▀ ▐ █ █   █ █▄████ █▄████   ▀▄ ▀▀██████▀▀ ▄▀ ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▐ █ █   █ █▄████
+▄▄▄▄▄▄   █▄▄▄▄▄▄▄▄▄▄▄▄▄     ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ ▄▄▄▄▄▄     ▄▄▄▄▄▄▄▄▄▄▄▄▀▀   ▄ ▄ ▄   ▀▄▄▄▄▄▄▄ ▄▄▄▄▄▄     ▀▀▄▄▄▄▄▄▄▄▀▀   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ ▄ ▄   ▀▄▄▄▄▄▄▄"""
 
 
 # These are package hints, not an exhaustive hardware whitelist.
@@ -161,20 +145,56 @@ def log_warning(message: str) -> None:
 
 
 def clear_screen() -> None:
-    """Clear visible terminal output without touching shell history or files."""
+    """Hard-reset the visible terminal before rendering a new kaliDriver screen.
+
+    This intentionally clears both the current screen and terminal scrollback.
+    Kali users commonly run the tool from XFCE Terminal, where CSI 3 J is
+    supported. The full-reset sequence is used as a fallback for terminals
+    that do not fully honor the scrollback erase sequence. This does not
+    delete shell history or files.
+    """
+    sequences = (
+        "\x1b[3J\x1b[2J\x1b[1;1H",  # erase scrollback + screen + home
+        "\x1b[H\x1b[2J\x1b[3J",      # alternate ordering for compatibility
+    )
     try:
-        console.clear()
+        for sequence in sequences:
+            sys.stdout.write(sequence)
+            sys.stdout.flush()
+        # Rich keeps its own cursor/terminal state; refresh it without printing.
+        console.clear(home=True)
     except Exception:
-        console.print("\n" * 40, end="")
+        # Last-resort visual clear for unusual/non-interactive terminals.
+        console.print("\n" * 80, end="")
+
+
+def clear_terminal_startup() -> None:
+    """Clear the terminal aggressively once at startup, including scrollback."""
+    if not sys.stdout.isatty():
+        return
+    try:
+        # DEC private mode reset + scrollback erase + screen erase.
+        sys.stdout.write("\x1b[?1049l\x1b[3J\x1b[2J\x1b[H")
+        sys.stdout.flush()
+    except OSError:
+        pass
+    clear_screen()
 
 
 def print_banner() -> None:
-    banner = random.choice(BANNERS).strip("\n")
-    title = Text(banner, style="bold cyan", justify="center")
-    subtitle = Text(f"{APP_NAME}  •  v{VERSION}  •  Hardware & Driver Assistant", style="bold white", justify="center")
-    author = Text("Developed by Mohanad Sayed", style="bold green", justify="center")
-    github = Text("github.com/MohanadSayed7/kaliDriver", style="dim", justify="center")
-    console.print(Panel(Group(title, subtitle, author, github), border_style="cyan", box=box.DOUBLE, padding=(1, 2)))
+    logo_text = Text(LOGO, style="bold green", no_wrap=True, overflow="crop", justify="center")
+    version = Text(f"kaliDriver  •  v{VERSION}  •  Hardware / Driver / APT", style="bold white", justify="center")
+    author = Text("Developed by Mohanad Sayed", style="green", justify="center")
+    github = Text("github.com/MohanadSayed7/kaliDriver", style="bright_blue", justify="center")
+
+    content = Group(logo_text, Text(""), version, author, github)
+    console.print(Panel(
+        content,
+        border_style="cyan",
+        box=box.DOUBLE,
+        padding=(1, 2),
+        expand=True,
+    ))
 
 
 def command_exists(command: str) -> bool:
@@ -854,7 +874,7 @@ def relaunch_as_root() -> int | None:
 
 def main() -> int:
     args = parse_args()
-    clear_screen()
+    clear_terminal_startup()
 
     elevated = relaunch_as_root()
     if elevated is not None:

@@ -38,12 +38,13 @@ Maintenance operations are grouped under **System Maintenance** instead of occup
 
 ## Screenshots
 
-Add project screenshots to `docs/images/` and reference them here, for example:
+### Startup & Hardware Inventory
 
-```md
-![Hardware inventory](docs/images/hardware-inventory.png)
-![Main menu](docs/images/main-menu.png)
-```
+The screenshot below shows `kaliDriver` detecting Kali Linux and the kernel, running automatic APT maintenance, and presenting the PCI hardware inventory with vendor, kernel-driver, and device-ID information.
+
+![kaliDriver startup and hardware inventory](docs/images/kaliDriver-startup.png)
+
+> Screenshot captured from `kaliDriver` running on Kali Linux.
 
 ## Requirements
 

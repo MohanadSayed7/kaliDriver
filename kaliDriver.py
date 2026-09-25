@@ -32,7 +32,7 @@ from rich.table import Table
 from rich.text import Text
 
 APP_NAME = "kaliDriver"
-VERSION = "2.2.0"
+VERSION = "2.3.0"
 LOG_FILE = Path.home() / ".kalidriver.log" if os.geteuid() != 0 else Path("/var/log/kalidriver.log")
 
 console = Console()
@@ -59,26 +59,32 @@ class HardwareDevice:
 
 
 BANNERS = [
-    r""" _  __      _ _ ____       _             
-| |/ /__ _| (_)  _ \ _ __(_)_   _____ _ __
-| ' // _` | | | | | | '__| \ \ / / _ \ '__|
-| . \ (_| | | | |_| | |  | |\ V /  __/ |  
-|_|\_\__,_|_|_|____/|_|  |_| \_/ \___|_|  """,
-    r"""██╗  ██╗ █████╗ ██╗     ██╗██████╗ ██████╗ ██╗██╗   ██╗███████╗██████╗
-██║ ██╔╝██╔══██╗██║     ██║██╔══██╗██╔══██╗██║██║   ██║██╔════╝██╔══██╗
-█████╔╝ ███████║██║     ██║██║  ██║██████╔╝██║██║   ██║█████╗  ██████╔╝
-██╔═██╗ ██╔══██║██║     ██║██║  ██║██╔═══╝ ██║╚██╗ ██╔╝██╔══╝  ██╔══██╗
-██║  ██╗██║  ██║███████╗██║██████╔╝██║     ██║ ╚████╔╝ ███████╗██║  ██║
-╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝╚═════╝ ╚═╝     ╚═╝  ╚═══╝  ╚══════╝╚═╝  ╚═╝""",
-    r"""╦╔═╦═╗╦  ╦╦╔╦╗╦═╗╦═╗╦╦  ╔╦╗╦  ╦
-╠╩╗║ ║║  ║║ ║ ╠╦╝╠╦╝║╚╗╔╝║║  ║
-╩ ╩╩═╝╩═╝╩╩ ╩ ╩╚═╩╚═╩ ╚╝ ╩╩═╝╩""",
-    r""" _  __     _ _ ____       _       _
-| |/ /__ _| (_)  _ \ _ __(_)_   _| |__   ___ _ __
-| ' // _` | | | | | | '__| | | | | '_ \ / _ \ '__|
-| . \ (_| | | | |_| | |  | | |_| | |_) |  __/ |
-|_|\_\\__,_|_|_|____/|_|  |_|\__,_|_.__/ \___|_|""",
+    r"""
++--------------------------------------------------------------+
+|                         kaliDriver                           |
+|                 HARDWARE & DRIVER TOOL                       |
++--------------------------------------------------------------+
+""",
+    r"""
+===============================================================
+                         KALI DRIVER
+                 HARDWARE / DRIVER / APT
+===============================================================
+""",
+    r"""
++==============================================================+
+|  KALI DRIVER  ::  HARDWARE  ::  FIRMWARE  ::  MAINTENANCE   |
++==============================================================+
+""",
+    r"""
+        _  __     _ _ ____       _       _     _
+       | |/ /__ _| (_)  _ \ _ __(_)_   _| |__ (_)__
+       | ' // _` | | | | | | '__| | | | | '_ \| \ \ /
+       | . \ (_| | | | |_| | |  | | |_| | | | | |\ V /
+       |_|\_\__,_|_|_|____/|_|  |_|\__,_|_| |_|_| \_/
+""",
 ]
+
 
 # These are package hints, not an exhaustive hardware whitelist.
 DRIVER_PROFILES = {
@@ -154,12 +160,21 @@ def log_warning(message: str) -> None:
     log_message("WARNING", message)
 
 
+def clear_screen() -> None:
+    """Clear visible terminal output without touching shell history or files."""
+    try:
+        console.clear()
+    except Exception:
+        console.print("\n" * 40, end="")
+
+
 def print_banner() -> None:
-    banner = random.choice(BANNERS)
+    banner = random.choice(BANNERS).strip("\n")
     title = Text(banner, style="bold cyan", justify="center")
     subtitle = Text(f"{APP_NAME}  •  v{VERSION}  •  Hardware & Driver Assistant", style="bold white", justify="center")
-    hint = Text("Each launch selects a different startup identity.", style="dim", justify="center")
-    console.print(Panel(Group(title, subtitle, hint), border_style="cyan", box=box.DOUBLE, padding=(1, 2)))
+    author = Text("Developed by Mohanad Sayed", style="bold green", justify="center")
+    github = Text("github.com/MohanadSayed7/kaliDriver", style="dim", justify="center")
+    console.print(Panel(Group(title, subtitle, author, github), border_style="cyan", box=box.DOUBLE, padding=(1, 2)))
 
 
 def command_exists(command: str) -> bool:
@@ -219,6 +234,21 @@ def module_loaded(name: str) -> bool:
     return result.returncode == 0 and any(line.split()[0] == name for line in result.stdout.splitlines()[1:] if line.split())
 
 
+def vendor_from_pci_id(device_id: str) -> str:
+    """Map common PCI vendor IDs without misclassifying subsystem text."""
+    mapping = {
+        "8086": "Intel",
+        "1002": "AMD",
+        "10de": "NVIDIA",
+        "10ec": "Realtek",
+        "14e4": "Broadcom",
+        "168c": "Qualcomm/Atheros",
+        "14c3": "MediaTek",
+        "1814": "Ralink",
+    }
+    return mapping.get(device_id.split(":", 1)[0].lower(), "Unknown")
+
+
 def scan_hardware() -> list[HardwareDevice]:
     devices: list[HardwareDevice] = []
 
@@ -231,20 +261,20 @@ def scan_hardware() -> list[HardwareDevice]:
                 id_match = re.search(r"\[([0-9a-fA-F]{4}:[0-9a-fA-F]{4})\]", line)
                 if id_match:
                     current.device_id = id_match.group(1)
-                if "NVIDIA" in line.upper():
-                    current.vendor = "NVIDIA"
-                elif "AMD" in line.upper() or "ATI" in line.upper():
-                    current.vendor = "AMD"
-                elif "INTEL" in line.upper():
-                    current.vendor = "Intel"
-                elif "REALTEK" in line.upper():
-                    current.vendor = "Realtek"
-                elif "BROADCOM" in line.upper():
-                    current.vendor = "Broadcom"
-                elif "QUALCOMM" in line.upper() or "ATHEROS" in line.upper():
-                    current.vendor = "Qualcomm/Atheros"
-                elif "MEDIATEK" in line.upper() or "Ralink" in line:
-                    current.vendor = "MediaTek"
+                if current.device_id:
+                    current.vendor = vendor_from_pci_id(current.device_id)
+                if current.vendor == "Unknown":
+                    upper = line.upper()
+                    if "NVIDIA" in upper:
+                        current.vendor = "NVIDIA"
+                    elif "REALTEK" in upper:
+                        current.vendor = "Realtek"
+                    elif "BROADCOM" in upper:
+                        current.vendor = "Broadcom"
+                    elif "QUALCOMM" in upper or "ATHEROS" in upper:
+                        current.vendor = "Qualcomm/Atheros"
+                    elif "MEDIATEK" in upper or "RALINK" in upper:
+                        current.vendor = "MediaTek"
                 devices.append(current)
             elif current is not None and "Kernel driver in use:" in line:
                 current.driver = line.split(":", 1)[1].strip()
@@ -710,52 +740,78 @@ def startup_workflow(*, full_upgrade: bool = False, dry_run: bool = False) -> in
     return 0
 
 
+def pause_before_menu() -> None:
+    console.input("\n[dim]Press Enter to return to the main menu...[/dim]")
+    clear_screen()
+    print_banner()
+
+
+def show_maintenance_menu(*, dry_run: bool = False) -> None:
+    while True:
+        menu = Table(title="System Maintenance", box=box.ROUNDED, show_header=False, expand=True)
+        menu.add_row("1", "APT repository status")
+        menu.add_row("2", "Repair / enable Kali firmware repositories")
+        menu.add_row("3", "Update APT metadata")
+        menu.add_row("4", "Upgrade installed packages")
+        menu.add_row("5", "Update + Upgrade system")
+        menu.add_row("0", "Back to main menu")
+        console.print(menu)
+        choice = console.input("[bold cyan]Select an option [0-5]: [/bold cyan]").strip().lower()
+        if choice == "1":
+            show_repo_status()
+            pause_before_menu()
+        elif choice == "2":
+            ensure_kali_repositories()
+            pause_before_menu()
+        elif choice == "3":
+            apt_update(dry_run=dry_run)
+            pause_before_menu()
+        elif choice == "4":
+            apt_upgrade(dry_run=dry_run)
+            pause_before_menu()
+        elif choice == "5":
+            apt_update_and_upgrade(dry_run=dry_run)
+            pause_before_menu()
+        elif choice in {"0", "q", "back"}:
+            return
+        else:
+            log_error("Unknown maintenance option.")
+
+
 def menu_loop(*, dry_run: bool = False) -> int:
     while True:
         menu = Table(title="Main Menu", box=box.ROUNDED, show_header=False, expand=True)
-        menu.add_row("1", "Full hardware diagnostic")
-        menu.add_row("2", "Hardware inventory")
-        menu.add_row("3", "Network & storage inventory")
-        menu.add_row("4", "APT repository status")
-        menu.add_row("5", "Repair / enable Kali firmware repositories")
-        menu.add_row("6", "Refresh APT metadata (Update)")
-        menu.add_row("7", "Upgrade installed packages")
-        menu.add_row("8", "Update + Upgrade system")
-        menu.add_row("9", "Install driver / firmware profile")
-        menu.add_row("10", "System information")
-        menu.add_row("11", "Exit")
+        menu.add_row("1", "Hardware Diagnostics", "Full hardware + network + storage scan")
+        menu.add_row("2", "System Maintenance", "Repositories, Update, Upgrade")
+        menu.add_row("3", "Driver & Firmware Manager", "Install a recommended driver profile")
+        menu.add_row("4", "System Information", "Kali, kernel, Python and tool status")
+        menu.add_row("0", "Exit", "Close kaliDriver")
         console.print(menu)
-        choice = console.input("[bold cyan]Choose an option: [/bold cyan]").strip().lower()
+        choice = console.input("[bold cyan]Select an option [0-4]: [/bold cyan]").strip().lower()
 
         if choice == "1":
             full_diagnostic(dry_run=dry_run)
-        elif choice == "2":
-            devices = scan_hardware()
-            console.print(build_hardware_table(devices))
-            summarize_hardware(devices)
-        elif choice == "3":
             show_network_and_storage()
-        elif choice == "4":
-            show_repo_status()
-        elif choice == "5":
-            ensure_kali_repositories()
-        elif choice == "6":
-            apt_update(dry_run=dry_run)
-        elif choice == "7":
-            apt_upgrade(dry_run=dry_run)
-        elif choice == "8":
-            apt_update_and_upgrade(dry_run=dry_run)
-        elif choice == "9":
+            pause_before_menu()
+        elif choice == "2":
+            clear_screen()
+            print_banner()
+            show_maintenance_menu(dry_run=dry_run)
+            clear_screen()
+            print_banner()
+        elif choice == "3":
             profile = show_driver_menu()
             if profile:
                 install_profile(profile, dry_run=dry_run)
-        elif choice == "10":
+            pause_before_menu()
+        elif choice == "4":
             show_system_info()
-        elif choice in {"11", "q", "quit", "exit"}:
+            pause_before_menu()
+        elif choice in {"0", "q", "quit", "exit"}:
             log_info("Exiting kaliDriver.")
             return 0
         else:
-            log_error("Unknown menu option.")
+            log_error("Unknown menu option. Please choose 0-4.")
 
 
 def parse_args() -> argparse.Namespace:
@@ -777,14 +833,34 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> int:
-    args = parse_args()
-    print_banner()
-
-    if not is_root():
-        log_error("Root privileges are required. Run: sudo kaliDriver")
+def relaunch_as_root() -> int | None:
+    """Re-launch the same Python interpreter through sudo when needed."""
+    if is_root():
+        return None
+    sudo = shutil.which("sudo")
+    if not sudo:
+        log_error("Root privileges are required, but sudo is not available.")
+        log_info(f"Run manually with: sudo {sys.executable} {Path(__file__).name}")
         return 1
 
+    log_info("Root privileges are required. Requesting sudo access...")
+    script = str(Path(__file__).resolve())
+    try:
+        os.execv(sudo, [sudo, sys.executable, script, *sys.argv[1:]])
+    except OSError as exc:
+        log_error(f"Unable to re-launch with sudo: {exc}")
+        return 1
+    return 1
+
+def main() -> int:
+    args = parse_args()
+    clear_screen()
+
+    elevated = relaunch_as_root()
+    if elevated is not None:
+        return elevated
+
+    print_banner()
     check_platform()
     log_info(f"Kernel: {get_kernel_version()} | Architecture: {platform.machine()}")
 
@@ -802,7 +878,7 @@ def main() -> int:
     if args.repo_fix:
         return 0 if ensure_kali_repositories() else 1
     if args.update:
-        return 0 if apt_update() else 1
+        return 0 if apt_update(dry_run=args.dry_run) else 1
     if args.upgrade:
         return 0 if apt_upgrade(full=args.full_upgrade, dry_run=args.dry_run) else 1
     if args.update_upgrade:

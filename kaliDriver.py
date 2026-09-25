@@ -31,7 +31,7 @@ from rich.table import Table
 from rich.text import Text
 
 APP_NAME = "kaliDriver"
-VERSION = "2.4.1"
+VERSION = "2.5.0"
 LOG_FILE = Path.home() / ".kalidriver.log" if os.geteuid() != 0 else Path("/var/log/kalidriver.log")
 
 console = Console()
@@ -55,6 +55,14 @@ class HardwareDevice:
     driver: str = "Unknown"
     driver_modules: list[str] = field(default_factory=list)
     device_id: str = ""
+
+
+@dataclass(frozen=True)
+class DriverIssue:
+    device: HardwareDevice
+    status: str
+    reason: str
+    recommended_profiles: tuple[str, ...] = ()
 
 
 LOGO = r"""▐▀▀▀▀█     █▀▀▀▀█     ▄▄███▄▄     ▐▀▀▀▀█        ▀▀▀▀▀▀▀▀    ▀▀▀▀▀▀▀▀▀▀▀▀     ▐▀▀▀▀▀▀▀▀▀█▄▄   ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀      █▀▀▀▀█▐▀▀▀▀▀▀▀▀▀▀▀▀█▐▀▀▀▀▀▀▀▀▀█▄▄   
@@ -441,6 +449,140 @@ def suggest_profiles(devices: Sequence[HardwareDevice]) -> list[str]:
     return list(dict.fromkeys(suggestions))
 
 
+def device_kind(device: HardwareDevice) -> str:
+    text = device.description.lower()
+    if any(token in text for token in ("vga", "3d controller", "display controller", "graphics")):
+        return "graphics"
+    if any(token in text for token in ("network controller", "ethernet controller", "wireless", "wi-fi")):
+        return "network"
+    if "bluetooth" in text:
+        return "bluetooth"
+    return "other"
+
+
+def recommended_profiles_for_device(device: HardwareDevice) -> tuple[str, ...]:
+    text = device.description.lower()
+    vendor = device.vendor.lower()
+    kind = device_kind(device)
+    profiles: list[str] = []
+    if kind == "graphics":
+        if vendor == "nvidia" or "nvidia" in text:
+            profiles.append("nvidia_gpu")
+        elif vendor == "amd" or "advanced micro devices" in text or "ati" in text:
+            profiles.append("amd_gpu")
+        elif vendor == "intel" or "intel corporation" in text:
+            profiles.append("intel_gpu")
+    elif kind == "network":
+        if vendor == "intel":
+            profiles.append("intel_wireless")
+        elif vendor == "realtek":
+            profiles.append("realtek_wireless")
+        elif vendor == "broadcom":
+            profiles.append("broadcom_wireless")
+        elif vendor == "qualcomm/atheros":
+            profiles.append("atheros_wireless")
+        elif vendor == "mediatek":
+            profiles.append("mediatek_wireless")
+        elif "wireless" in text or "wi-fi" in text:
+            profiles.append("wireless_common")
+    elif kind == "bluetooth":
+        profiles.append("bluetooth")
+    return tuple(dict.fromkeys(profiles))
+
+
+def detect_driver_issues(devices: Sequence[HardwareDevice]) -> list[DriverIssue]:
+    """Identify devices that need attention without treating every 'Unknown' as broken.
+
+    A PCI device with an active kernel driver is considered handled. If modules are
+    advertised but none is bound, the device is flagged as unbound. If neither an
+    active driver nor kernel modules are reported, it is flagged as missing-driver.
+    USB entries are not marked missing solely because lsusb does not expose a kernel
+    driver mapping; USB class drivers are often handled indirectly by the kernel.
+    """
+    issues: list[DriverIssue] = []
+    for device in devices:
+        if device.bus != "PCI":
+            continue
+        profiles = recommended_profiles_for_device(device)
+        if device.driver not in {"Unknown", "", "none", "None"}:
+            continue
+        if device.driver_modules:
+            modules = ", ".join(device.driver_modules)
+            issues.append(DriverIssue(device, "MODULE_AVAILABLE_NOT_BOUND", f"Kernel modules reported: {modules}", profiles))
+        else:
+            reason = "No active kernel driver or kernel module was reported."
+            issues.append(DriverIssue(device, "MISSING_DRIVER", reason, profiles))
+    return issues
+
+
+def show_driver_issues(devices: Sequence[HardwareDevice]) -> list[DriverIssue]:
+    issues = detect_driver_issues(devices)
+    if not issues:
+        console.print(Panel("[green]No PCI devices were found without an active kernel driver.[/green]", title="Driver Status", border_style="green"))
+        return []
+
+    table = Table(title="Driver Issues Detected", box=box.ROUNDED, expand=True)
+    table.add_column("#", style="bold cyan", width=4)
+    table.add_column("Device", style="white", min_width=30)
+    table.add_column("Status", style="yellow", width=24)
+    table.add_column("Current Driver", style="red", width=16)
+    table.add_column("Recommendation", style="green")
+    for idx, issue in enumerate(issues, 1):
+        recommendation = ", ".join(DRIVER_PROFILES[k].name for k in issue.recommended_profiles) or "No safe automatic profile"
+        table.add_row(str(idx), issue.device.description, issue.status, issue.device.driver, recommendation)
+    console.print(table)
+    return issues
+
+
+def driver_manager(*, dry_run: bool = False) -> None:
+    """Scan first, then offer only profiles relevant to detected driver issues."""
+    with console.status("[blue]Analyzing kernel driver bindings...[/blue]", spinner="dots"):
+        devices = scan_hardware()
+    issues = show_driver_issues(devices)
+    if not issues:
+        return
+
+    candidates: list[str] = []
+    for issue in issues:
+        candidates.extend(issue.recommended_profiles)
+    candidates = list(dict.fromkeys(candidates))
+    if not candidates:
+        log_warning("Issues were detected, but kaliDriver has no safe automatic profile for them.")
+        return
+
+    console.print(Rule("Recommended Repair Profiles"))
+    menu = Table(box=box.ROUNDED, show_header=True, expand=True)
+    menu.add_column("#", style="bold cyan", width=4)
+    menu.add_column("Profile", style="bold white")
+    menu.add_column("Purpose", style="dim")
+    for idx, key in enumerate(candidates, 1):
+        profile = DRIVER_PROFILES[key]
+        menu.add_row(str(idx), profile.name, profile.description)
+    menu.add_row("0", "Back", "Return to the main menu")
+    console.print(menu)
+    choice = console.input("[bold cyan]Select a repair profile [0-{}]: [/bold cyan]".format(len(candidates))).strip()
+    if choice == "0" or choice.lower() == "q":
+        return
+    if not choice.isdigit() or not 1 <= int(choice) <= len(candidates):
+        log_error("Invalid repair selection.")
+        return
+    key = candidates[int(choice) - 1]
+    profile = DRIVER_PROFILES[key]
+    console.print(Panel(
+        f"[bold]Profile:[/bold] {profile.name}\n"
+        f"[bold]Purpose:[/bold] {profile.description}\n"
+        f"[bold]Packages:[/bold] {', '.join(profile.packages)}\n"
+        f"[bold]Kernel headers:[/bold] {'Yes' if profile.kernel_headers else 'No'}",
+        title="Installation Plan",
+        border_style="blue",
+    ))
+    confirm = console.input("[bold yellow]Install this profile now? [y/N]: [/bold yellow]").strip().lower()
+    if confirm != "y":
+        log_info("Installation cancelled by user.")
+        return
+    install_profile(key, dry_run=dry_run)
+
+
 def package_installed(package: str) -> bool:
     if not command_exists("dpkg-query"):
         return False
@@ -727,16 +869,21 @@ def full_diagnostic(*, dry_run: bool = False) -> list[HardwareDevice]:
         devices = scan_hardware()
     console.print(build_hardware_table(devices))
     summarize_hardware(devices)
+    issues = show_driver_issues(devices)
     suggestions = suggest_profiles(devices)
     if suggestions:
-        console.print(Rule("Recommended Profiles"))
+        console.print(Rule("Detected Hardware Profiles"))
         for key in suggestions:
             profile = DRIVER_PROFILES[key]
             console.print(f"[cyan]•[/cyan] {profile.name} — {profile.description}")
-        if dry_run:
-            log_info("Dry-run is enabled; recommendations are informational only.")
+    if issues:
+        log_warning(f"{len(issues)} PCI device(s) need driver attention.")
+    elif suggestions:
+        log_info("Hardware profiles were detected; no missing PCI driver was established.")
     else:
         log_info("No specialized profile matched. Use the device inventory and kernel driver fields for manual diagnosis.")
+    if dry_run:
+        log_info("Dry-run is enabled; recommendations are informational only.")
     return devices
 
 
@@ -750,13 +897,23 @@ def startup_workflow(*, full_upgrade: bool = False, dry_run: bool = False) -> in
 
     devices = full_diagnostic(dry_run=dry_run)
     suggestions = suggest_profiles(devices)
-    if suggestions:
+    issues = detect_driver_issues(devices)
+    if issues:
+        console.print(Panel(
+            "\n".join(
+                f"• {issue.device.description} → {', '.join(DRIVER_PROFILES[k].name for k in issue.recommended_profiles) or 'manual diagnosis'}"
+                for issue in issues
+            ),
+            title="Driver Issues Requiring Attention",
+            border_style="yellow",
+        ))
+        log_info("Open Driver & Firmware Manager to review and optionally repair detected issues. No driver is installed automatically.")
+    elif suggestions:
         console.print(Panel(
             "\n".join(f"• {DRIVER_PROFILES[key].name}" for key in suggestions),
-            title="Recommended Driver Actions",
+            title="Detected Hardware Profiles",
             border_style="cyan",
         ))
-        log_info("Open the driver menu to apply a recommended profile. No driver is installed automatically without a user selection.")
     return 0
 
 
@@ -803,7 +960,7 @@ def menu_loop(*, dry_run: bool = False) -> int:
         menu = Table(title="Main Menu", box=box.ROUNDED, show_header=False, expand=True)
         menu.add_row("1", "Hardware Diagnostics", "Full hardware + network + storage scan")
         menu.add_row("2", "System Maintenance", "Repositories, Update, Upgrade")
-        menu.add_row("3", "Driver & Firmware Manager", "Install a recommended driver profile")
+        menu.add_row("3", "Driver & Firmware Manager", "Detect missing drivers and offer targeted repairs")
         menu.add_row("4", "System Information", "Kali, kernel, Python and tool status")
         menu.add_row("0", "Exit", "Close kaliDriver")
         console.print(menu)
@@ -820,9 +977,9 @@ def menu_loop(*, dry_run: bool = False) -> int:
             clear_screen()
             print_banner()
         elif choice == "3":
-            profile = show_driver_menu()
-            if profile:
-                install_profile(profile, dry_run=dry_run)
+            clear_screen()
+            print_banner()
+            driver_manager(dry_run=dry_run)
             pause_before_menu()
         elif choice == "4":
             show_system_info()

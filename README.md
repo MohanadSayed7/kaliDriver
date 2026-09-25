@@ -1,170 +1,152 @@
 # kaliDriver
 
-**Professional Hardware, Driver & System Maintenance Assistant for Kali Linux**
+**Professional Hardware, Driver & APT Assistant for Kali Linux**
 
-`kaliDriver` is an English-language terminal utility built to make common Kali Linux hardware diagnostics, firmware management, and system maintenance easier from one interface.
+`kaliDriver` is a terminal-based Kali Linux utility built with Python and Rich. It focuses on hardware discovery, kernel-driver status, firmware/package assistance, and safe system maintenance.
 
-## Highlights
-
-- Fixed Zetra ASCII startup logo for a consistent project identity.
-- Automatic terminal screen and scrollback cleanup before the application UI appears when supported by the terminal.
-- Automatic `sudo` elevation when launched with `python3 kaliDriver.py`.
-- Kali Linux and kernel detection.
-- PCI inventory with active kernel-driver and device-ID information.
-- USB inventory.
-- Network-interface and storage inventory.
-- Kali APT repository validation and repair.
-- `apt update`, `apt upgrade`, and `apt full-upgrade` workflows.
-- Driver and firmware profiles for common Intel, AMD, NVIDIA, Realtek, Broadcom, Qualcomm/Atheros and MediaTek hardware.
-- Rich tables, panels, spinners, progress bars and colored logs.
-- Dry-run mode and command-line automation options.
-- Repository backups before configuration changes.
-
-## Main Menu
-
-The interactive menu was intentionally simplified so the main screen does not contain a long list of low-level operations:
-
-```text
-╭──────────────────────────── Main Menu ───────────────────────────╮
-│  1  Hardware Diagnostics       Full hardware + network + storage │
-│  2  System Maintenance         Repositories, Update, Upgrade    │
-│  3  Driver & Firmware Manager  Install a recommended profile   │
-│  4  System Information         Kali, kernel, Python and tools  │
-│  0  Exit                       Close kaliDriver                │
-╰─────────────────────────────────────────────────────────────────╯
-```
-
-Maintenance operations are grouped under **System Maintenance** instead of occupying five separate entries in the main menu.
-
-## Screenshots
+## Screenshot
 
 ### Startup & Hardware Inventory
 
-The screenshot below shows `kaliDriver` detecting Kali Linux and the kernel, running automatic APT maintenance, and presenting the PCI hardware inventory with vendor, kernel-driver, and device-ID information.
-
 ![kaliDriver startup and hardware inventory](docs/images/kaliDriver-startup.png)
 
-> Screenshot captured from `kaliDriver` running on Kali Linux.
+## What It Does
 
-## Requirements
+- Detects PCI and USB hardware with `lspci` and `lsusb`.
+- Reports the active PCI kernel driver and advertised kernel modules.
+- Flags PCI devices with no active driver instead of treating every `Unknown` value as an error.
+- Separates unbound devices from devices where no driver/module was reported.
+- Maps detected hardware to targeted driver/firmware profiles where a safe mapping is known.
+- Provides APT repository checks and repair for Kali's firmware components.
+- Runs `apt update`, `apt upgrade`, and optional `full-upgrade` workflows.
+- Provides network-interface and storage inventory.
+- Uses Rich tables, panels, progress indicators, and colored status messages.
+- Never installs a driver automatically just because a device was detected; installation requires an explicit user confirmation.
 
-- Kali Linux
-- Python 3.10+
-- `sudo` for automatic privilege elevation
-- `apt-get`
-- `pciutils` (`lspci`)
-- `usbutils` (`lsusb`)
-- Internet access for package operations
-- Python package: `rich`
+## Main Menu
+
+```text
+[1] Hardware Diagnostics
+[2] System Maintenance
+[3] Driver & Firmware Manager
+[4] System Information
+[0] Exit
+```
+
+### 1. Hardware Diagnostics
+
+Performs a hardware scan and reports:
+
+- PCI devices
+- USB devices
+- Vendor and device IDs
+- Active kernel driver
+- Advertised kernel modules
+- Network interfaces
+- Storage devices
+- Driver issues requiring attention
+
+### 2. System Maintenance
+
+Provides:
+
+- APT repository status
+- Kali firmware repository repair
+- APT metadata refresh
+- Package upgrade
+- Update + upgrade
+
+### 3. Driver & Firmware Manager
+
+This is the hardware-first part of `kaliDriver`.
+
+The manager scans first and then shows only detected driver issues. For example:
+
+```text
+Driver Issues Detected
+
+#  Device                         Status                    Current Driver  Recommendation
+1  Broadcom ...                   MISSING_DRIVER            Unknown         Broadcom Wireless Firmware
+2  NVIDIA ...                     MODULE_AVAILABLE_NOT_BOUND nouveau         NVIDIA GPU Driver
+```
+
+The tool then shows the installation plan and asks for confirmation before changing packages.
+
+### 4. System Information
+
+Displays Kali version, kernel, architecture, Python version, APT availability, scanner availability, and log location.
 
 ## Installation
 
-Clone the repository and install the Python dependency:
+Clone the repository:
 
 ```bash
 git clone https://github.com/MohanadSayed7/kaliDriver.git
 cd kaliDriver
-python3 -m venv .venv
-source .venv/bin/activate
-python3 -m pip install -r requirements.txt
 ```
 
-Make the script executable if you also want to launch it as `./kaliDriver.py`:
+Create a virtual environment:
 
 ```bash
-chmod +x kaliDriver.py
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
 
 ## Usage
 
-### Recommended — one command
+Recommended one-command mode:
 
 ```bash
 python3 kaliDriver.py
 ```
 
-The program automatically requests `sudo` when root privileges are required. It then:
+The program requests `sudo` when root privileges are required.
 
-```text
-1. Clears the visible terminal
-2. Shows the fixed Zetra startup logo
-3. Detects Kali Linux and the kernel
-4. Checks Kali firmware repositories
-5. Runs APT update
-6. Runs APT upgrade
-7. Scans PCI and USB hardware
-8. Shows driver recommendations
-9. Opens the simplified main menu
-```
-
-You can also run it directly after `chmod +x`:
+If you prefer direct execution:
 
 ```bash
+chmod +x kaliDriver.py
 ./kaliDriver.py
 ```
 
-### Skip automatic maintenance
-
-```bash
-python3 kaliDriver.py --skip-maintenance
-```
-
-### Useful CLI commands
+### Useful options
 
 ```bash
 python3 kaliDriver.py --scan
 python3 kaliDriver.py --diagnose
 python3 kaliDriver.py --repo-check
-python3 kaliDriver.py --repo-fix
 python3 kaliDriver.py --update
 python3 kaliDriver.py --upgrade
 python3 kaliDriver.py --update-upgrade
-python3 kaliDriver.py --full-upgrade --update-upgrade
-python3 kaliDriver.py --install nvidia_gpu --dry-run
+python3 kaliDriver.py --dry-run
+python3 kaliDriver.py --skip-maintenance
 ```
 
-## Hardware Support Model
+## Safety Model
 
-`kaliDriver` does not claim to contain a hard-coded installer for every device ever made. Instead, it uses standard Linux hardware discovery tools to inventory hardware exposed through PCI and USB, reports the kernel driver when available, and maps recognized vendor families to package-level remediation profiles.
+`kaliDriver` uses detection before recommendation. A device is not considered broken merely because a text field says `Unknown`. PCI driver status is based on the kernel-driver information reported by `lspci -nnk`.
 
-Unknown or unusual hardware remains visible in the inventory for manual diagnosis rather than receiving an unsafe guessed driver.
+Driver installation is always an explicit action. The tool shows the selected profile and package plan before asking for confirmation.
 
-## Driver & Firmware Profiles
+## Kali APT Compatibility
 
-Current profiles include:
-
-```text
-wireless_common
-intel_wireless
-realtek_wireless
-atheros_wireless
-broadcom_wireless
-mediatek_wireless
-amd_gpu
-intel_gpu
-nvidia_gpu
-bluetooth
-```
-
-## Safety / Operational Behavior
-
-- Package operations use `apt-get` without shell interpolation.
-- Repository files are backed up as `*.kalidriver.bak` before modification.
-- `--dry-run` does not install packages or modify repository files.
-- APT failures show diagnostic output and are written to the application log.
-- Clearing the terminal only removes visible terminal output; it does **not** delete shell history or files.
+Kali's current documentation uses the deb822 repository file `/etc/apt/sources.list.d/kali.sources` with `main contrib non-free non-free-firmware`; older installations may still use `/etc/apt/sources.list`. `kaliDriver` checks both formats.
 
 ## Project Structure
 
 ```text
 kaliDriver/
 ├── kaliDriver.py
-├── requirements.txt
-├── pyproject.toml
 ├── README.md
 ├── CHANGELOG.md
 ├── LICENSE
-└── .gitignore
+├── requirements.txt
+├── pyproject.toml
+├── .gitignore
+└── docs/
+    └── images/
+        └── kaliDriver-startup.png
 ```
 
 ## Author
@@ -175,4 +157,4 @@ GitHub: https://github.com/MohanadSayed7/kaliDriver
 
 ## License
 
-MIT
+See [LICENSE](LICENSE).

@@ -1,160 +1,141 @@
-# kaliDriver
+# kaliDriver 3.0
 
-**Professional Hardware, Driver & APT Assistant for Kali Linux**
+**Hardware, Driver, Firmware & System Maintenance Assistant for Kali Linux**
 
-`kaliDriver` is a terminal-based Kali Linux utility built with Python and Rich. It focuses on hardware discovery, kernel-driver status, firmware/package assistance, and safe system maintenance.
+`kaliDriver` is designed around a simple workflow:
 
-## Screenshot
+> **Scan → Identify exact hardware → Resolve safe driver/firmware actions → Install → Verify → Reboot when required**
 
-### Startup & Hardware Inventory
+It is not a static list of vendor drivers. The tool inspects PCI/USB hardware, kernel driver binding, firmware errors, packages, DKMS and the running kernel before proposing repairs.
 
-![kaliDriver startup and hardware inventory](docs/images/kaliDriver-startup.png)
-
-## What It Does
-
-- Detects PCI and USB hardware with `lspci` and `lsusb`.
-- Reports the active PCI kernel driver and advertised kernel modules.
-- Flags PCI devices with no active driver instead of treating every `Unknown` value as an error.
-- Separates unbound devices from devices where no driver/module was reported.
-- Maps detected hardware to targeted driver/firmware profiles where a safe mapping is known.
-- Provides APT repository checks and repair for Kali's firmware components.
-- Runs `apt update`, `apt upgrade`, and optional `full-upgrade` workflows.
-- Provides network-interface and storage inventory.
-- Uses Rich tables, panels, progress indicators, and colored status messages.
-- Never installs a driver automatically just because a device was detected; installation requires an explicit user confirmation.
-
-## Main Menu
+## Main menu
 
 ```text
-[1] Hardware Diagnostics
-[2] System Maintenance
-[3] Driver & Firmware Manager
-[4] System Information
+[1] Scan missing drivers & firmware
+[2] Install All + Update & Upgrade
+[3] Install Missing Drivers
+[4] Update & Upgrade System
+[5] Full Hardware & Driver Scan
 [0] Exit
 ```
 
-### 1. Hardware Diagnostics
+### 1 — Scan Missing Drivers & Firmware
 
-Performs a hardware scan and reports:
+Read-only diagnosis. It does **not** install anything.
 
-- PCI devices
-- USB devices
-- Vendor and device IDs
-- Active kernel driver
-- Advertised kernel modules
-- Network interfaces
-- Storage devices
-- Driver issues requiring attention
+The scan checks:
 
-### 2. System Maintenance
+- PCI hardware IDs with `lspci -nnk`
+- USB hardware IDs with `lsusb`
+- active kernel driver binding
+- advertised kernel modules
+- GPU / network / Bluetooth device classes
+- kernel firmware errors from `dmesg`
+- safe hardware-ID-to-package mappings
 
-Provides:
+### 2 — Install All + Update & Upgrade
 
-- APT repository status
-- Kali firmware repository repair
-- APT metadata refresh
-- Package upgrade
-- Update + upgrade
+Full repair workflow:
 
-### 3. Driver & Firmware Manager
+1. Validate Kali repositories.
+2. Run `apt update`.
+3. Run `apt full-upgrade`.
+4. Scan hardware again.
+5. Resolve exact missing drivers/firmware.
+6. Install only packages mapped to detected hardware.
+7. Verify hardware and kernel state.
+8. Reboot when `/var/run/reboot-required` indicates it is necessary.
 
-This is the hardware-first part of `kaliDriver`.
+`Install All` means **all safe repairs detected for this machine**, not every driver package available in Kali.
 
-The manager scans first and then shows only detected driver issues. For example:
+### 3 — Install Missing Drivers
 
-```text
-Driver Issues Detected
+Installs only the safely resolved missing driver/firmware packages. It does not perform a full system upgrade first.
 
-#  Device                         Status                    Current Driver  Recommendation
-1  Broadcom ...                   MISSING_DRIVER            Unknown         Broadcom Wireless Firmware
-2  NVIDIA ...                     MODULE_AVAILABLE_NOT_BOUND nouveau         NVIDIA GPU Driver
-```
+### 4 — Update & Upgrade System
 
-The tool then shows the installation plan and asks for confirmation before changing packages.
+Runs Kali package maintenance and then performs a driver/kernel verification pass.
 
-### 4. System Information
+### 5 — Full Hardware & Driver Scan
 
-Displays Kali version, kernel, architecture, Python version, APT availability, scanner availability, and log location.
+Displays the complete hardware inventory plus the repair analysis.
 
-## Installation
+## Hardware-ID resolution
 
-Clone the repository:
+Driver decisions are based on exact device IDs where possible. For example, Broadcom BCM43142 Wi-Fi uses PCI ID `14e4:4365` and is mapped to `broadcom-sta-dkms` instead of blindly installing a generic Broadcom firmware package.
 
-```bash
-git clone https://github.com/MohanadSayed7/kaliDriver.git
-cd kaliDriver
-```
+Unknown hardware is reported for manual diagnosis rather than being assigned a potentially incompatible driver.
 
-Create a virtual environment:
+## Firmware diagnostics
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
+`kaliDriver` also reads kernel firmware errors such as `failed to load` and `firmware patch file not found`.
+
+Some firmware is distributed as a device-specific artifact rather than a normal generic APT package. Those cases are explicitly reported instead of pretending that a generic package fixed the device.
+
+## GPU detection
+
+The scanner identifies display devices such as:
+
+- Intel graphics
+- AMD graphics
+- NVIDIA graphics
+
+It records the PCI ID and active kernel driver (for example `i915`, `amdgpu`, or `nouveau`) and uses that information during verification.
+
+## Safety model
+
+- No driver is installed merely because a vendor name was detected.
+- Exact hardware mappings take priority over generic vendor heuristics.
+- Unknown mappings are shown as requiring manual diagnosis.
+- Package installation uses APT rather than downloading arbitrary executables.
+- Repository files are backed up before `kaliDriver` changes them.
+- A reboot is requested only when the system indicates one is required.
 
 ## Usage
 
-Recommended one-command mode:
+```bash
+sudo python3 kaliDriver.py
+```
+
+Read-only scan:
 
 ```bash
-python3 kaliDriver.py
+sudo python3 kaliDriver.py --scan
 ```
 
-The program requests `sudo` when root privileges are required.
-
-If you prefer direct execution:
+Full setup:
 
 ```bash
-chmod +x kaliDriver.py
-./kaliDriver.py
+sudo python3 kaliDriver.py --setup
 ```
 
-### Useful options
+Install safely resolved missing drivers:
 
 ```bash
-python3 kaliDriver.py --scan
-python3 kaliDriver.py --diagnose
-python3 kaliDriver.py --repo-check
-python3 kaliDriver.py --update
-python3 kaliDriver.py --upgrade
-python3 kaliDriver.py --update-upgrade
-python3 kaliDriver.py --dry-run
-python3 kaliDriver.py --skip-maintenance
+sudo python3 kaliDriver.py --install-missing
 ```
 
-## Safety Model
+Dry run:
 
-`kaliDriver` uses detection before recommendation. A device is not considered broken merely because a text field says `Unknown`. PCI driver status is based on the kernel-driver information reported by `lspci -nnk`.
-
-Driver installation is always an explicit action. The tool shows the selected profile and package plan before asking for confirmation.
-
-## Kali APT Compatibility
-
-Kali's current documentation uses the deb822 repository file `/etc/apt/sources.list.d/kali.sources` with `main contrib non-free non-free-firmware`; older installations may still use `/etc/apt/sources.list`. `kaliDriver` checks both formats.
-
-## Project Structure
-
-```text
-kaliDriver/
-├── kaliDriver.py
-├── README.md
-├── CHANGELOG.md
-├── LICENSE
-├── requirements.txt
-├── pyproject.toml
-├── .gitignore
-└── docs/
-    └── images/
-        └── kaliDriver-startup.png
+```bash
+sudo python3 kaliDriver.py --setup --dry-run
 ```
 
-## Author
+## Requirements
 
-**Mohanad Sayed**
+- Kali Linux
+- Python 3.10+
+- root privileges
+- `apt-get`
+- `pciutils` / `lspci`
+- `usbutils` / `lsusb`
+- Rich Python package
+- Internet connectivity for package operations
 
-GitHub: https://github.com/MohanadSayed7/kaliDriver
+## Project status
+
+Version `3.0.0` introduces the hardware-first repair architecture. The hardware database is intentionally conservative and can be expanded with verified PCI/USB ID mappings over time.
 
 ## License
 
-See [LICENSE](LICENSE).
+MIT

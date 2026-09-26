@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import os
 import platform
+import random
 import re
 import shutil
 import subprocess
@@ -31,7 +32,7 @@ from rich.table import Table
 from rich.text import Text
 
 APP_NAME = "kaliDriver"
-VERSION = "2.5.0"
+VERSION = "3.0.0"
 LOG_FILE = Path.home() / ".kalidriver.log" if os.geteuid() != 0 else Path("/var/log/kalidriver.log")
 
 console = Console()
@@ -62,21 +63,31 @@ class DriverIssue:
     device: HardwareDevice
     status: str
     reason: str
-    recommended_profiles: tuple[str, ...] = ()
+    packages: tuple[str, ...] = ()
+    module: str = ""
 
 
-LOGO = r"""▐▀▀▀▀█     █▀▀▀▀█     ▄▄███▄▄     ▐▀▀▀▀█        ▀▀▀▀▀▀▀▀    ▀▀▀▀▀▀▀▀▀▀▀▀     ▐▀▀▀▀▀▀▀▀▀█▄▄   ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀      █▀▀▀▀█▐▀▀▀▀▀▀▀▀▀▀▀▀█▐▀▀▀▀▀▀▀▀▀█▄▄   
-▐ ████     █ ████   ▄█▀▄▄▄▄▄██▄   ▐ ████        ▀▀▀▀▀▀▀▀    ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  ▐ ████████████▄ ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀      ██████▐ ████████████▐ ████████████▄ 
-▐ ████     █ ████  █▀▄██████████  ▐ ████        ▀▀▀▀▀▀▀▀    ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀▀█▀████▌▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀      ██████▐ ████▀▀▀▀▀▀▀▀ ▀▀▀▀▀▀▀▀█▀████▌
-▐ ████▄▄▄▄█▀▄███▌ ▐▌▐███████████▌ ▐ ████         █▀▀▀▀█     ▐▀▀▀▀█ ▀ ▀█▀▀▀▀▀▌▐ █ █ ▄▄▄█ ████▌ █▀▀▀▀█ ▐▀▀▀▀▀█      ██████▐ ████▄▄▄▄▄▄▄▄▐ █ █ ▄▄▄█ ████▌
-▐ █████▄▄▄▄████▀  █ ████▀  ▀▀▀▀▀▀ ▐ ████         █ ████     ▐█████    ██████▌▐ █ █ ██▄▄████▀  █ ████ ▐ █████      █ ████▐ ████▄▄▄▄▄▄▄█▐ █ █ ██▄▄████▀ 
-▐ ████████████ ▄▀▐▌▐███▌ ▀▀▀▀▀▀▀▀ ▐ ████         █ ████     ▐█████    ██████▌▐ █ █ ██████▀    █ ████ ▐▄▀████▌    ▐█ ████▐ ████████████▐ █ █ ██████▀   
-▐▄████ ▄ ▀▀████▄ █ ████ ▀▀▀▀▀▀▀▀▀▀▐▄████         █ ████     ▐█████   ▄██████▌▐ █ █ ▀█▄▀███▄   █ ████  █▄▀████    ██████▌▐▄████        ▐ █ █ ▀█▄▀███▄  
-▄▄▄▄▄▄  ▀▄  ██████ ████ ▀▀▀▀▀▀▀▀▀▀▄▄▄▄▄▄▄▄▄▄▄▄▄▄ █ ████     ▐█████▀▀▀▀▄█████ ▐ █ █ ▄ ▀█ ███▄  █ ████   █▄▀████▄▄█▀▄████ ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▐ █ █ ▄ ▀█ ███▄ 
-▄▄▄▄▄▄   █ ▄▄▄▄▄▄█ ████ ▀▀▀ █▀████▄▄▄▄▄▄▄▄▄▄▄▄▄▄ █ ████     ▐█████████████▀  ▐ █ █  ▀▄▐█ ████ █ ████  ▄ ▀█▄▀███▄▄████▀ ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▐ █ █  ▀▄▐█ ████
-▄▄▄▄▄▄   █ ▄▄▄▄▄▄█▄████     █▄████▄▄▄▄▄▄▄▄▄▄▄▄▄▄ █▄████     ▐▄▄████████▀▀ ▄▀ ▐ █ █   █ █▄████ █▄████   ▀▄ ▀▀██████▀▀ ▄▀ ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▐ █ █   █ █▄████
-▄▄▄▄▄▄   █▄▄▄▄▄▄▄▄▄▄▄▄▄     ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ ▄▄▄▄▄▄     ▄▄▄▄▄▄▄▄▄▄▄▄▀▀   ▄ ▄ ▄   ▀▄▄▄▄▄▄▄ ▄▄▄▄▄▄     ▀▀▄▄▄▄▄▄▄▄▀▀   ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄ ▄ ▄   ▀▄▄▄▄▄▄▄"""
-
+BANNERS = [
+    r""" _  __      _ _ ____       _             
+| |/ /__ _| (_)  _ \ _ __(_)_   _____ _ __
+| ' // _` | | | | | | '__| \ \ / / _ \ '__|
+| . \ (_| | | | |_| | |  | |\ V /  __/ |  
+|_|\_\__,_|_|_|____/|_|  |_| \_/ \___|_|  """,
+    r"""██╗  ██╗ █████╗ ██╗     ██╗██████╗ ██████╗ ██╗██╗   ██╗███████╗██████╗
+██║ ██╔╝██╔══██╗██║     ██║██╔══██╗██╔══██╗██║██║   ██║██╔════╝██╔══██╗
+█████╔╝ ███████║██║     ██║██║  ██║██████╔╝██║██║   ██║█████╗  ██████╔╝
+██╔═██╗ ██╔══██║██║     ██║██║  ██║██╔═══╝ ██║╚██╗ ██╔╝██╔══╝  ██╔══██╗
+██║  ██╗██║  ██║███████╗██║██████╔╝██║     ██║ ╚████╔╝ ███████╗██║  ██║
+╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝╚═════╝ ╚═╝     ╚═╝  ╚═══╝  ╚══════╝╚═╝  ╚═╝""",
+    r"""╦╔═╦═╗╦  ╦╦╔╦╗╦═╗╦═╗╦╦  ╔╦╗╦  ╦
+╠╩╗║ ║║  ║║ ║ ╠╦╝╠╦╝║╚╗╔╝║║  ║
+╩ ╩╩═╝╩═╝╩╩ ╩ ╩╚═╩╚═╩ ╚╝ ╩╩═╝╩""",
+    r""" _  __     _ _ ____       _       _
+| |/ /__ _| (_)  _ \ _ __(_)_   _| |__   ___ _ __
+| ' // _` | | | | | | '__| | | | | '_ \ / _ \ '__|
+| . \ (_| | | | |_| | |  | | |_| | |_) |  __/ |
+|_|\_\\__,_|_|_|____/|_|  |_|\__,_|_.__/ \___|_|""",
+]
 
 # These are package hints, not an exhaustive hardware whitelist.
 DRIVER_PROFILES = {
@@ -152,57 +163,12 @@ def log_warning(message: str) -> None:
     log_message("WARNING", message)
 
 
-def clear_screen() -> None:
-    """Hard-reset the visible terminal before rendering a new kaliDriver screen.
-
-    This intentionally clears both the current screen and terminal scrollback.
-    Kali users commonly run the tool from XFCE Terminal, where CSI 3 J is
-    supported. The full-reset sequence is used as a fallback for terminals
-    that do not fully honor the scrollback erase sequence. This does not
-    delete shell history or files.
-    """
-    sequences = (
-        "\x1b[3J\x1b[2J\x1b[1;1H",  # erase scrollback + screen + home
-        "\x1b[H\x1b[2J\x1b[3J",      # alternate ordering for compatibility
-    )
-    try:
-        for sequence in sequences:
-            sys.stdout.write(sequence)
-            sys.stdout.flush()
-        # Rich keeps its own cursor/terminal state; refresh it without printing.
-        console.clear(home=True)
-    except Exception:
-        # Last-resort visual clear for unusual/non-interactive terminals.
-        console.print("\n" * 80, end="")
-
-
-def clear_terminal_startup() -> None:
-    """Clear the terminal aggressively once at startup, including scrollback."""
-    if not sys.stdout.isatty():
-        return
-    try:
-        # DEC private mode reset + scrollback erase + screen erase.
-        sys.stdout.write("\x1b[?1049l\x1b[3J\x1b[2J\x1b[H")
-        sys.stdout.flush()
-    except OSError:
-        pass
-    clear_screen()
-
-
 def print_banner() -> None:
-    logo_text = Text(LOGO, style="bold green", no_wrap=True, overflow="crop", justify="center")
-    version = Text(f"kaliDriver  •  v{VERSION}  •  Hardware / Driver / APT", style="bold white", justify="center")
-    author = Text("Developed by Mohanad Sayed", style="green", justify="center")
-    github = Text("github.com/MohanadSayed7/kaliDriver", style="bright_blue", justify="center")
-
-    content = Group(logo_text, Text(""), version, author, github)
-    console.print(Panel(
-        content,
-        border_style="cyan",
-        box=box.DOUBLE,
-        padding=(1, 2),
-        expand=True,
-    ))
+    banner = random.choice(BANNERS)
+    title = Text(banner, style="bold cyan", justify="center")
+    subtitle = Text(f"{APP_NAME}  •  v{VERSION}  •  Hardware & Driver Assistant", style="bold white", justify="center")
+    hint = Text("Each launch selects a different startup identity.", style="dim", justify="center")
+    console.print(Panel(Group(title, subtitle, hint), border_style="cyan", box=box.DOUBLE, padding=(1, 2)))
 
 
 def command_exists(command: str) -> bool:
@@ -262,21 +228,6 @@ def module_loaded(name: str) -> bool:
     return result.returncode == 0 and any(line.split()[0] == name for line in result.stdout.splitlines()[1:] if line.split())
 
 
-def vendor_from_pci_id(device_id: str) -> str:
-    """Map common PCI vendor IDs without misclassifying subsystem text."""
-    mapping = {
-        "8086": "Intel",
-        "1002": "AMD",
-        "10de": "NVIDIA",
-        "10ec": "Realtek",
-        "14e4": "Broadcom",
-        "168c": "Qualcomm/Atheros",
-        "14c3": "MediaTek",
-        "1814": "Ralink",
-    }
-    return mapping.get(device_id.split(":", 1)[0].lower(), "Unknown")
-
-
 def scan_hardware() -> list[HardwareDevice]:
     devices: list[HardwareDevice] = []
 
@@ -289,20 +240,20 @@ def scan_hardware() -> list[HardwareDevice]:
                 id_match = re.search(r"\[([0-9a-fA-F]{4}:[0-9a-fA-F]{4})\]", line)
                 if id_match:
                     current.device_id = id_match.group(1)
-                if current.device_id:
-                    current.vendor = vendor_from_pci_id(current.device_id)
-                if current.vendor == "Unknown":
-                    upper = line.upper()
-                    if "NVIDIA" in upper:
-                        current.vendor = "NVIDIA"
-                    elif "REALTEK" in upper:
-                        current.vendor = "Realtek"
-                    elif "BROADCOM" in upper:
-                        current.vendor = "Broadcom"
-                    elif "QUALCOMM" in upper or "ATHEROS" in upper:
-                        current.vendor = "Qualcomm/Atheros"
-                    elif "MEDIATEK" in upper or "RALINK" in upper:
-                        current.vendor = "MediaTek"
+                if "NVIDIA" in line.upper():
+                    current.vendor = "NVIDIA"
+                elif "AMD" in line.upper() or "ATI" in line.upper():
+                    current.vendor = "AMD"
+                elif "INTEL" in line.upper():
+                    current.vendor = "Intel"
+                elif "REALTEK" in line.upper():
+                    current.vendor = "Realtek"
+                elif "BROADCOM" in line.upper():
+                    current.vendor = "Broadcom"
+                elif "QUALCOMM" in line.upper() or "ATHEROS" in line.upper():
+                    current.vendor = "Qualcomm/Atheros"
+                elif "MEDIATEK" in line.upper() or "Ralink" in line:
+                    current.vendor = "MediaTek"
                 devices.append(current)
             elif current is not None and "Kernel driver in use:" in line:
                 current.driver = line.split(":", 1)[1].strip()
@@ -449,138 +400,151 @@ def suggest_profiles(devices: Sequence[HardwareDevice]) -> list[str]:
     return list(dict.fromkeys(suggestions))
 
 
+# Conservative hardware-ID mappings. Unknown IDs are never assigned a driver blindly.
+EXACT_DRIVER_MAP: dict[str, tuple[str, tuple[str, ...], str]] = {
+    "14e4:4365": ("wl", ("broadcom-sta-dkms",), "Broadcom BCM43142 proprietary STA driver"),
+}
+
+VENDOR_FIRMWARE_MAP: dict[str, str] = {
+    "Intel": "firmware-iwlwifi",
+    "Realtek": "firmware-realtek",
+    "Broadcom": "firmware-brcm80211",
+    "Qualcomm/Atheros": "firmware-atheros",
+    "MediaTek": "firmware-mediatek",
+}
+
+
 def device_kind(device: HardwareDevice) -> str:
     text = device.description.lower()
-    if any(token in text for token in ("vga", "3d controller", "display controller", "graphics")):
-        return "graphics"
-    if any(token in text for token in ("network controller", "ethernet controller", "wireless", "wi-fi")):
+    if any(x in text for x in ("vga compatible", "3d controller", "display controller", "graphics")):
+        return "gpu"
+    if any(x in text for x in ("network controller", "ethernet controller", "wireless")):
         return "network"
     if "bluetooth" in text:
         return "bluetooth"
+    if "audio" in text or "multimedia audio" in text:
+        return "audio"
+    if "usb controller" in text:
+        return "usb"
     return "other"
 
 
-def recommended_profiles_for_device(device: HardwareDevice) -> tuple[str, ...]:
-    text = device.description.lower()
-    vendor = device.vendor.lower()
+def firmware_errors() -> list[str]:
+    if not command_exists("dmesg"):
+        return []
+    result = run_command(["dmesg"], timeout=30)
+    text = (result.stdout + "\n" + result.stderr).lower()
+    patterns = ("failed to load", "direct firmware load failed", "firmware patch file not found")
+    return [line.strip() for line in (result.stdout + "\n" + result.stderr).splitlines() if any(p in line.lower() for p in patterns)]
+
+
+def resolve_device_issue(device: HardwareDevice) -> DriverIssue | None:
+    if device.bus != "PCI":
+        return None
+    exact = EXACT_DRIVER_MAP.get(device.device_id.lower())
+    if exact and device.driver in ("Unknown", "", "none", "None"):
+        module, packages, reason = exact
+        return DriverIssue(device, "DRIVER_MISSING", reason, packages, module)
+    if device.driver not in ("Unknown", "", "none", "None"):
+        return None
     kind = device_kind(device)
-    profiles: list[str] = []
-    if kind == "graphics":
-        if vendor == "nvidia" or "nvidia" in text:
-            profiles.append("nvidia_gpu")
-        elif vendor == "amd" or "advanced micro devices" in text or "ati" in text:
-            profiles.append("amd_gpu")
-        elif vendor == "intel" or "intel corporation" in text:
-            profiles.append("intel_gpu")
-    elif kind == "network":
-        if vendor == "intel":
-            profiles.append("intel_wireless")
-        elif vendor == "realtek":
-            profiles.append("realtek_wireless")
-        elif vendor == "broadcom":
-            profiles.append("broadcom_wireless")
-        elif vendor == "qualcomm/atheros":
-            profiles.append("atheros_wireless")
-        elif vendor == "mediatek":
-            profiles.append("mediatek_wireless")
-        elif "wireless" in text or "wi-fi" in text:
-            profiles.append("wireless_common")
-    elif kind == "bluetooth":
-        profiles.append("bluetooth")
-    return tuple(dict.fromkeys(profiles))
+    if kind == "network":
+        return DriverIssue(device, "DRIVER_MISSING", "No active kernel driver is bound to this PCI network device.", (), "")
+    if kind == "gpu":
+        return DriverIssue(device, "DRIVER_MISSING", "No active kernel driver is bound to this GPU.", (), "")
+    return DriverIssue(device, "DRIVER_MISSING", "No active kernel driver is reported for this PCI device.", (), "")
 
 
 def detect_driver_issues(devices: Sequence[HardwareDevice]) -> list[DriverIssue]:
-    """Identify devices that need attention without treating every 'Unknown' as broken.
-
-    A PCI device with an active kernel driver is considered handled. If modules are
-    advertised but none is bound, the device is flagged as unbound. If neither an
-    active driver nor kernel modules are reported, it is flagged as missing-driver.
-    USB entries are not marked missing solely because lsusb does not expose a kernel
-    driver mapping; USB class drivers are often handled indirectly by the kernel.
-    """
     issues: list[DriverIssue] = []
     for device in devices:
-        if device.bus != "PCI":
-            continue
-        profiles = recommended_profiles_for_device(device)
-        if device.driver not in {"Unknown", "", "none", "None"}:
-            continue
-        if device.driver_modules:
-            modules = ", ".join(device.driver_modules)
-            issues.append(DriverIssue(device, "MODULE_AVAILABLE_NOT_BOUND", f"Kernel modules reported: {modules}", profiles))
-        else:
-            reason = "No active kernel driver or kernel module was reported."
-            issues.append(DriverIssue(device, "MISSING_DRIVER", reason, profiles))
+        issue = resolve_device_issue(device)
+        if issue:
+            issues.append(issue)
     return issues
 
 
-def show_driver_issues(devices: Sequence[HardwareDevice]) -> list[DriverIssue]:
-    issues = detect_driver_issues(devices)
-    if not issues:
-        console.print(Panel("[green]No PCI devices were found without an active kernel driver.[/green]", title="Driver Status", border_style="green"))
+def firmware_packages_for_devices(devices: Sequence[HardwareDevice]) -> list[str]:
+    errors = firmware_errors()
+    if not errors:
         return []
-
-    table = Table(title="Driver Issues Detected", box=box.ROUNDED, expand=True)
-    table.add_column("#", style="bold cyan", width=4)
-    table.add_column("Device", style="white", min_width=30)
-    table.add_column("Status", style="yellow", width=24)
-    table.add_column("Current Driver", style="red", width=16)
-    table.add_column("Recommendation", style="green")
-    for idx, issue in enumerate(issues, 1):
-        recommendation = ", ".join(DRIVER_PROFILES[k].name for k in issue.recommended_profiles) or "No safe automatic profile"
-        table.add_row(str(idx), issue.device.description, issue.status, issue.device.driver, recommendation)
-    console.print(table)
-    return issues
+    packages: list[str] = []
+    for device in devices:
+        kind = device_kind(device)
+        if kind in {"network", "bluetooth"} and device.vendor in VENDOR_FIRMWARE_MAP:
+            packages.append(VENDOR_FIRMWARE_MAP[device.vendor])
+    # Bluetooth BCM43142 patch is shipped by the broader firmware package on supported Kali releases.
+    return list(dict.fromkeys(packages))
 
 
-def driver_manager(*, dry_run: bool = False) -> None:
-    """Scan first, then offer only profiles relevant to detected driver issues."""
-    with console.status("[blue]Analyzing kernel driver bindings...[/blue]", spinner="dots"):
-        devices = scan_hardware()
-    issues = show_driver_issues(devices)
-    if not issues:
-        return
-
-    candidates: list[str] = []
+def build_repair_plan(devices: Sequence[HardwareDevice]) -> tuple[list[DriverIssue], list[str]]:
+    issues = detect_driver_issues(devices)
+    packages: list[str] = []
     for issue in issues:
-        candidates.extend(issue.recommended_profiles)
-    candidates = list(dict.fromkeys(candidates))
-    if not candidates:
-        log_warning("Issues were detected, but kaliDriver has no safe automatic profile for them.")
-        return
+        packages.extend(issue.packages)
+        if issue.packages:
+            continue
+        # Conservative vendor firmware fallback only when the exact kernel driver is unknown.
+        if issue.device.vendor in VENDOR_FIRMWARE_MAP and device_kind(issue.device) in {"network", "bluetooth"}:
+            packages.append(VENDOR_FIRMWARE_MAP[issue.device.vendor])
+    packages.extend(firmware_packages_for_devices(devices))
+    return issues, list(dict.fromkeys(packages))
 
-    console.print(Rule("Recommended Repair Profiles"))
-    menu = Table(box=box.ROUNDED, show_header=True, expand=True)
-    menu.add_column("#", style="bold cyan", width=4)
-    menu.add_column("Profile", style="bold white")
-    menu.add_column("Purpose", style="dim")
-    for idx, key in enumerate(candidates, 1):
-        profile = DRIVER_PROFILES[key]
-        menu.add_row(str(idx), profile.name, profile.description)
-    menu.add_row("0", "Back", "Return to the main menu")
-    console.print(menu)
-    choice = console.input("[bold cyan]Select a repair profile [0-{}]: [/bold cyan]".format(len(candidates))).strip()
-    if choice == "0" or choice.lower() == "q":
-        return
-    if not choice.isdigit() or not 1 <= int(choice) <= len(candidates):
-        log_error("Invalid repair selection.")
-        return
-    key = candidates[int(choice) - 1]
-    profile = DRIVER_PROFILES[key]
-    console.print(Panel(
-        f"[bold]Profile:[/bold] {profile.name}\n"
-        f"[bold]Purpose:[/bold] {profile.description}\n"
-        f"[bold]Packages:[/bold] {', '.join(profile.packages)}\n"
-        f"[bold]Kernel headers:[/bold] {'Yes' if profile.kernel_headers else 'No'}",
-        title="Installation Plan",
-        border_style="blue",
-    ))
-    confirm = console.input("[bold yellow]Install this profile now? [y/N]: [/bold yellow]").strip().lower()
-    if confirm != "y":
-        log_info("Installation cancelled by user.")
-        return
-    install_profile(key, dry_run=dry_run)
+
+def show_repair_scan(devices: Sequence[HardwareDevice], *, title: str = "Missing Drivers & Firmware") -> tuple[list[DriverIssue], list[str]]:
+    issues, packages = build_repair_plan(devices)
+    table = Table(title=title, box=box.ROUNDED, expand=True)
+    table.add_column("#", width=4, style="bold cyan")
+    table.add_column("Device", style="white")
+    table.add_column("ID", style="dim", width=12)
+    table.add_column("Status", style="yellow")
+    table.add_column("Driver", style="green")
+    table.add_column("Repair", style="magenta")
+    for i, issue in enumerate(issues, 1):
+        repair = ", ".join(issue.packages) if issue.packages else "Manual diagnosis"
+        table.add_row(str(i), issue.device.description, issue.device.device_id or "-", issue.status, issue.device.driver, repair)
+    if not issues:
+        table.add_row("-", "No PCI driver issues detected", "-", "OK", "-", "None")
+    console.print(table)
+    fw_errors = firmware_errors()
+    if fw_errors:
+        console.print(Panel("\n".join(fw_errors[-8:]), title="Kernel Firmware Diagnostics", border_style="yellow"))
+        if any("BCM43142A0-105b-e065.hcd" in e or "BCM-105b-e065.hcd" in e for e in fw_errors):
+            console.print(Panel(
+                "BCM43142 Bluetooth patch firmware is missing.\n"
+                "The exact .hcd filename requested by the kernel must be supplied; it is not treated as a generic Broadcom Wi-Fi package.",
+                title="Manual Firmware Artifact Required", border_style="yellow"))
+    if packages:
+        console.print(Panel("\n".join(f"• {p}" for p in packages), title="Resolved Installation Plan", border_style="blue"))
+    return issues, packages
+
+
+def verify_hardware(devices_before: Sequence[HardwareDevice] | None = None) -> bool:
+    devices = scan_hardware()
+    issues, packages = build_repair_plan(devices)
+    unresolved = [i for i in issues if not i.packages]
+    if unresolved:
+        log_warning(f"Verification found {len(unresolved)} device(s) requiring manual driver resolution.")
+    else:
+        log_success("Hardware verification completed: no unresolved PCI driver mappings.")
+    fw = firmware_errors()
+    if fw:
+        log_warning(f"Kernel firmware diagnostics still report {len(fw)} firmware-related message(s).")
+    return not unresolved and not fw
+
+
+def reboot_if_needed() -> bool:
+    reboot_required = Path("/var/run/reboot-required").exists()
+    if not reboot_required:
+        # A kernel upgrade can also be detected from installed vs running kernel.
+        return False
+    console.print(Panel("System changes require a reboot to activate the new kernel/driver state.", title="Reboot Required", border_style="yellow"))
+    answer = console.input("[bold cyan]Reboot now? [Y/n]: [/bold cyan]").strip().lower()
+    if answer in {"", "y", "yes"}:
+        run_command(["systemctl", "reboot"], timeout=30)
+        return True
+    log_warning("Reboot postponed by user.")
+    return False
 
 
 def package_installed(package: str) -> bool:
@@ -683,14 +647,10 @@ def ensure_kali_repositories() -> bool:
         return False
 
 
-def apt_update(*, dry_run: bool = False) -> bool:
+def apt_update() -> bool:
     if not command_exists("apt-get"):
         log_error("apt-get is unavailable.")
         return False
-    if dry_run:
-        log_info("Dry-run mode: would run `apt-get update`.")
-        return True
-
     with console.status("[blue]Refreshing APT metadata...[/blue]", spinner="dots"):
         result = run_command(["apt-get", "update"], timeout=300)
     if result.returncode != 0:
@@ -703,46 +663,75 @@ def apt_update(*, dry_run: bool = False) -> bool:
 
 
 def apt_upgrade(*, full: bool = False, dry_run: bool = False) -> bool:
-    """Upgrade installed packages through APT.
-
-    By default this uses `apt-get upgrade`; `full=True` uses `full-upgrade`
-    when the user explicitly requests the more comprehensive mode.
-    """
     if not command_exists("apt-get"):
         log_error("apt-get is unavailable.")
         return False
-
-    action = "full-upgrade" if full else "upgrade"
-    label = "full system upgrade" if full else "system upgrade"
-    command = ["apt-get", action, "-y"]
-
+    command = ["apt-get", "full-upgrade" if full else "upgrade", "-y"]
     if dry_run:
-        log_info(f"Dry-run mode: would run `apt-get {action} -y`.")
+        log_info("Dry-run: " + " ".join(command))
         return True
-
-    with console.status(f"[blue]Running {label}...[/blue]", spinner="dots"):
-        result = run_command(command, timeout=3600)
-
+    with console.status("[blue]Upgrading Kali packages...[/blue]", spinner="dots"):
+        result = run_command(command, timeout=1800)
     if result.returncode != 0:
-        tail = "\n".join((result.stderr or result.stdout).splitlines()[-16:])
-        log_error(f"APT {action} failed.")
-        console.print(Panel(tail or "No APT diagnostic output.", title="APT Diagnostics", border_style="red"))
+        tail = "\n".join((result.stderr or result.stdout).splitlines()[-15:])
+        console.print(Panel(tail or "No APT diagnostic output.", title="Upgrade Diagnostics", border_style="red"))
         return False
-
-    log_success(f"APT {label} completed successfully.")
+    log_success("System upgrade completed successfully.")
     return True
 
 
 def apt_update_and_upgrade(*, full: bool = False, dry_run: bool = False) -> bool:
-    """Refresh package metadata, then upgrade installed packages."""
-    log_info("Starting system update and upgrade sequence.")
+    return apt_update() and apt_upgrade(full=full, dry_run=dry_run)
+
+
+def install_missing_drivers(*, dry_run: bool = False, do_update: bool = False, do_upgrade: bool = False) -> bool:
+    devices = scan_hardware()
+    issues, packages = show_repair_scan(devices)
+    if not packages:
+        if issues:
+            log_warning("Issues were detected, but no safe package mapping is available for them.")
+        else:
+            log_success("No missing driver or firmware package was identified.")
+        return not issues
+    if not ensure_kali_repositories():
+        return False
+    if do_update and not apt_update():
+        return False
+    if not apt_install(packages + ["dkms", "pciutils", "usbutils"], dry_run=dry_run):
+        return False
+    if do_upgrade and not apt_upgrade(full=True, dry_run=dry_run):
+        return False
     if dry_run:
-        log_info("Dry-run mode: repository files will not be changed.")
-    elif not ensure_kali_repositories():
+        return True
+    log_info("Re-scanning hardware after package installation...")
+    ok = verify_hardware(devices)
+    reboot_if_needed()
+    return ok
+
+
+def full_setup(*, dry_run: bool = False) -> bool:
+    console.print(Panel("Update repositories → Upgrade system → Detect hardware → Resolve drivers/firmware → Install → Verify", title="Full Setup", border_style="cyan"))
+    if not ensure_kali_repositories():
         return False
-    if not apt_update(dry_run=dry_run):
-        return False
-    return apt_upgrade(full=full, dry_run=dry_run)
+    if dry_run:
+        log_info("Dry-run: would run apt update and apt full-upgrade.")
+    else:
+        if not apt_update():
+            return False
+        if not apt_upgrade(full=True, dry_run=False):
+            return False
+    devices = scan_hardware()
+    console.print(build_hardware_table(devices))
+    issues, packages = show_repair_scan(devices)
+    if packages:
+        if not apt_install(packages + ["dkms", "pciutils", "usbutils"], dry_run=dry_run):
+            return False
+    elif issues:
+        log_warning("Some devices need manual driver mapping; no unsafe automatic package was selected.")
+    if not dry_run:
+        verify_hardware(devices)
+        reboot_if_needed()
+    return True
 
 
 def apt_install(packages: Sequence[str], *, dry_run: bool = False) -> bool:
@@ -799,7 +788,7 @@ def install_profile(profile_key: str, *, dry_run: bool = False) -> bool:
         return False
     if not ensure_kali_repositories():
         return False
-    if not apt_update(dry_run=dry_run):
+    if not apt_update():
         return False
 
     packages = list(profile.packages)
@@ -869,182 +858,87 @@ def full_diagnostic(*, dry_run: bool = False) -> list[HardwareDevice]:
         devices = scan_hardware()
     console.print(build_hardware_table(devices))
     summarize_hardware(devices)
-    issues = show_driver_issues(devices)
-    suggestions = suggest_profiles(devices)
-    if suggestions:
-        console.print(Rule("Detected Hardware Profiles"))
-        for key in suggestions:
-            profile = DRIVER_PROFILES[key]
-            console.print(f"[cyan]•[/cyan] {profile.name} — {profile.description}")
-    if issues:
-        log_warning(f"{len(issues)} PCI device(s) need driver attention.")
-    elif suggestions:
-        log_info("Hardware profiles were detected; no missing PCI driver was established.")
-    else:
-        log_info("No specialized profile matched. Use the device inventory and kernel driver fields for manual diagnosis.")
-    if dry_run:
-        log_info("Dry-run is enabled; recommendations are informational only.")
+    show_repair_scan(devices)
     return devices
-
-
-def startup_workflow(*, full_upgrade: bool = False, dry_run: bool = False) -> int:
-    """Run the default one-command maintenance workflow before opening the menu."""
-    console.print(Rule("Automatic Startup Maintenance"))
-    log_info("Default mode runs repository checks, APT update, package upgrade, and hardware discovery.")
-
-    if not apt_update_and_upgrade(full=full_upgrade, dry_run=dry_run):
-        log_warning("System maintenance finished with errors. Continuing to hardware diagnostics.")
-
-    devices = full_diagnostic(dry_run=dry_run)
-    suggestions = suggest_profiles(devices)
-    issues = detect_driver_issues(devices)
-    if issues:
-        console.print(Panel(
-            "\n".join(
-                f"• {issue.device.description} → {', '.join(DRIVER_PROFILES[k].name for k in issue.recommended_profiles) or 'manual diagnosis'}"
-                for issue in issues
-            ),
-            title="Driver Issues Requiring Attention",
-            border_style="yellow",
-        ))
-        log_info("Open Driver & Firmware Manager to review and optionally repair detected issues. No driver is installed automatically.")
-    elif suggestions:
-        console.print(Panel(
-            "\n".join(f"• {DRIVER_PROFILES[key].name}" for key in suggestions),
-            title="Detected Hardware Profiles",
-            border_style="cyan",
-        ))
-    return 0
-
-
-def pause_before_menu() -> None:
-    console.input("\n[dim]Press Enter to return to the main menu...[/dim]")
-    clear_screen()
-    print_banner()
-
-
-def show_maintenance_menu(*, dry_run: bool = False) -> None:
-    while True:
-        menu = Table(title="System Maintenance", box=box.ROUNDED, show_header=False, expand=True)
-        menu.add_row("1", "APT repository status")
-        menu.add_row("2", "Repair / enable Kali firmware repositories")
-        menu.add_row("3", "Update APT metadata")
-        menu.add_row("4", "Upgrade installed packages")
-        menu.add_row("5", "Update + Upgrade system")
-        menu.add_row("0", "Back to main menu")
-        console.print(menu)
-        choice = console.input("[bold cyan]Select an option [0-5]: [/bold cyan]").strip().lower()
-        if choice == "1":
-            show_repo_status()
-            pause_before_menu()
-        elif choice == "2":
-            ensure_kali_repositories()
-            pause_before_menu()
-        elif choice == "3":
-            apt_update(dry_run=dry_run)
-            pause_before_menu()
-        elif choice == "4":
-            apt_upgrade(dry_run=dry_run)
-            pause_before_menu()
-        elif choice == "5":
-            apt_update_and_upgrade(dry_run=dry_run)
-            pause_before_menu()
-        elif choice in {"0", "q", "back"}:
-            return
-        else:
-            log_error("Unknown maintenance option.")
 
 
 def menu_loop(*, dry_run: bool = False) -> int:
     while True:
-        menu = Table(title="Main Menu", box=box.ROUNDED, show_header=False, expand=True)
-        menu.add_row("1", "Hardware Diagnostics", "Full hardware + network + storage scan")
-        menu.add_row("2", "System Maintenance", "Repositories, Update, Upgrade")
-        menu.add_row("3", "Driver & Firmware Manager", "Detect missing drivers and offer targeted repairs")
-        menu.add_row("4", "System Information", "Kali, kernel, Python and tool status")
-        menu.add_row("0", "Exit", "Close kaliDriver")
+        menu = Table(title="kaliDriver Control Center", box=box.ROUNDED, show_header=False, expand=True)
+        menu.add_row("1", "Scan missing drivers & firmware")
+        menu.add_row("2", "Install All + Update & Upgrade")
+        menu.add_row("3", "Install Missing Drivers")
+        menu.add_row("4", "Update & Upgrade System")
+        menu.add_row("5", "Full Hardware & Driver Scan")
+        menu.add_row("0", "Exit")
         console.print(menu)
-        choice = console.input("[bold cyan]Select an option [0-4]: [/bold cyan]").strip().lower()
-
+        choice = console.input("[bold cyan]Choose an option: [/bold cyan]").strip().lower()
         if choice == "1":
-            full_diagnostic(dry_run=dry_run)
-            show_network_and_storage()
-            pause_before_menu()
+            clear_screen()
+            devices = scan_hardware()
+            show_repair_scan(devices)
         elif choice == "2":
             clear_screen()
-            print_banner()
-            show_maintenance_menu(dry_run=dry_run)
-            clear_screen()
-            print_banner()
+            full_setup(dry_run=dry_run)
         elif choice == "3":
             clear_screen()
-            print_banner()
-            driver_manager(dry_run=dry_run)
-            pause_before_menu()
+            install_missing_drivers(dry_run=dry_run)
         elif choice == "4":
-            show_system_info()
-            pause_before_menu()
+            clear_screen()
+            if apt_update() and apt_upgrade(full=True, dry_run=dry_run):
+                verify_hardware()
+                reboot_if_needed()
+        elif choice == "5":
+            clear_screen()
+            full_diagnostic(dry_run=dry_run)
         elif choice in {"0", "q", "quit", "exit"}:
             log_info("Exiting kaliDriver.")
             return 0
         else:
-            log_error("Unknown menu option. Please choose 0-4.")
+            log_error("Unknown menu option.")
+        console.input("\n[dim]Press Enter to return to the menu...[/dim]")
+        clear_screen()
+
+
+def clear_screen() -> None:
+    if sys.stdout.isatty():
+        sys.stdout.write("\x1b[3J\x1b[2J\x1b[H")
+        sys.stdout.flush()
+    else:
+        console.clear(home=True)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog=APP_NAME,
-        description="Professional Kali Linux hardware, driver and firmware assistant.",
+        description="Kali Linux hardware, driver, firmware and system maintenance assistant.",
     )
-    parser.add_argument("--scan", action="store_true", help="Run a hardware scan and exit.")
-    parser.add_argument("--diagnose", action="store_true", help="Run a full diagnostic and exit.")
-    parser.add_argument("--install", metavar="PROFILE", help="Install a named driver profile.")
+    parser.add_argument("--scan", action="store_true", help="Scan hardware and report missing drivers/firmware.")
+    parser.add_argument("--diagnose", action="store_true", help="Run a full hardware and driver diagnostic.")
+    parser.add_argument("--install", metavar="PROFILE", help="Install a named legacy driver profile.")
+    parser.add_argument("--install-missing", action="store_true", help="Install safely resolved missing drivers/firmware.")
+    parser.add_argument("--setup", action="store_true", help="Run full setup: update, upgrade, repair drivers, verify.")
+    parser.add_argument("--update", action="store_true", help="Run apt update.")
+    parser.add_argument("--upgrade", action="store_true", help="Run apt full-upgrade.")
+    parser.add_argument("--update-upgrade", action="store_true", help="Run apt update followed by full-upgrade.")
     parser.add_argument("--repo-check", action="store_true", help="Display APT repository status and exit.")
-    parser.add_argument("--repo-fix", action="store_true", help="Enable the standard Kali firmware repository components.")
-    parser.add_argument("--update", action="store_true", help="Run apt update and exit.")
-    parser.add_argument("--upgrade", action="store_true", help="Upgrade installed packages and exit.")
-    parser.add_argument("--update-upgrade", action="store_true", help="Run update followed by package upgrade and exit.")
-    parser.add_argument("--full-upgrade", action="store_true", help="Use apt full-upgrade instead of apt upgrade.")
-    parser.add_argument("--dry-run", action="store_true", help="Show plans without installing packages.")
-    parser.add_argument("--skip-maintenance", action="store_true", help="Skip the automatic update/upgrade workflow at startup.")
+    parser.add_argument("--repo-fix", action="store_true", help="Enable standard Kali firmware repository components.")
+    parser.add_argument("--dry-run", action="store_true", help="Show plans without changing the system.")
     return parser.parse_args()
 
 
-def relaunch_as_root() -> int | None:
-    """Re-launch the same Python interpreter through sudo when needed."""
-    if is_root():
-        return None
-    sudo = shutil.which("sudo")
-    if not sudo:
-        log_error("Root privileges are required, but sudo is not available.")
-        log_info(f"Run manually with: sudo {sys.executable} {Path(__file__).name}")
-        return 1
-
-    log_info("Root privileges are required. Requesting sudo access...")
-    script = str(Path(__file__).resolve())
-    try:
-        os.execv(sudo, [sudo, sys.executable, script, *sys.argv[1:]])
-    except OSError as exc:
-        log_error(f"Unable to re-launch with sudo: {exc}")
-        return 1
-    return 1
-
 def main() -> int:
     args = parse_args()
-    clear_terminal_startup()
-
-    elevated = relaunch_as_root()
-    if elevated is not None:
-        return elevated
-
+    clear_screen()
     print_banner()
+    if not is_root():
+        log_error("Root privileges are required. Run: sudo python3 kaliDriver.py")
+        return 1
     check_platform()
     log_info(f"Kernel: {get_kernel_version()} | Architecture: {platform.machine()}")
-
     if args.scan:
         devices = scan_hardware()
-        console.print(build_hardware_table(devices))
-        summarize_hardware(devices)
+        show_repair_scan(devices)
         return 0
     if args.diagnose:
         full_diagnostic(dry_run=args.dry_run)
@@ -1054,18 +948,18 @@ def main() -> int:
         return 0
     if args.repo_fix:
         return 0 if ensure_kali_repositories() else 1
+    if args.install_missing:
+        return 0 if install_missing_drivers(dry_run=args.dry_run) else 1
+    if args.setup:
+        return 0 if full_setup(dry_run=args.dry_run) else 1
     if args.update:
-        return 0 if apt_update(dry_run=args.dry_run) else 1
+        return 0 if apt_update() else 1
     if args.upgrade:
-        return 0 if apt_upgrade(full=args.full_upgrade, dry_run=args.dry_run) else 1
+        return 0 if apt_upgrade(full=True, dry_run=args.dry_run) else 1
     if args.update_upgrade:
-        return 0 if apt_update_and_upgrade(full=args.full_upgrade, dry_run=args.dry_run) else 1
+        return 0 if apt_update_and_upgrade(full=True, dry_run=args.dry_run) else 1
     if args.install:
         return 0 if install_profile(args.install, dry_run=args.dry_run) else 1
-
-    if not args.skip_maintenance:
-        startup_workflow(full_upgrade=args.full_upgrade, dry_run=args.dry_run)
-
     return menu_loop(dry_run=args.dry_run)
 
 

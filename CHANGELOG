@@ -1,0 +1,17 @@
+# Changelog
+
+## 3.0.0
+
+- Rebuilt Driver Manager around hardware-first detection.
+- Added missing driver/firmware scan separate from installation.
+- Added `Install All + Update & Upgrade` full setup workflow.
+- Added missing-driver-only installation workflow.
+- Added exact PCI hardware ID mapping support.
+- Added conservative BCM43142 `14e4:4365` → `broadcom-sta-dkms` mapping.
+- Added GPU detection and active kernel-driver reporting.
+- Added kernel firmware error detection from `dmesg`.
+- Added post-install hardware verification.
+- Added reboot-required detection.
+- Added `--setup`, `--install-missing`, `--update`, `--upgrade`, and `--update-upgrade` CLI actions.
+- Added terminal clearing between menu actions.
+- Removed the old arbitrary driver-profile menu from the main workflow.

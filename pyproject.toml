@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kalidriver"
-version = "3.0.0"
-description = "Hardware, driver, firmware and system maintenance assistant for Kali Linux"
+version = "3.1.0"
+description = "Automatic Kali Linux hardware, driver, firmware and system maintenance assistant"
 requires-python = ">=3.10"
-dependencies = ["rich>=13.7"]
+dependencies = ["rich>=13.7,<15"]
 
 [project.scripts]
 kalidriver = "kaliDriver:main"
